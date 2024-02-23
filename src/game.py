@@ -13,7 +13,7 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 screen.fill((255, 255, 255))
 
 choice = input("Server or client? (s/c): ")
-while choice not in ["s", "c"]:
+while choice.lower() not in ["s", "c"]:
     print("Invalid choice")
     choice = input("Server or client? (s/c): ")
 
@@ -33,6 +33,7 @@ class Paddle(pygame.sprite.Sprite):
         self.surf = pygame.Surface((20, 175))
         self.surf.fill((255, 255, 255))
         self.rect = self.surf.get_rect()
+        self.scored = 0
 
         if position == "left":
             self.rect.left = 5
@@ -80,14 +81,18 @@ class Ball(pygame.sprite.Sprite):
         self.rect.left = SCREEN_WIDTH/2
         self.rect.top = SCREEN_HEIGHT/2
     
-    def move(self):
+    def move(self) -> None:
         self.rect.move_ip(self.x_travel, self.y_travel)
 
         if (self.rect.top <= 0) or (self.rect.bottom >= SCREEN_HEIGHT):
             self.y_travel = -self.y_travel
 
-        if self.rect.left <= 0 or self.rect.right >= SCREEN_WIDTH:
-            self.x_travel = -self.x_travel
+    def should_be_scored(self) -> bool:
+        if self.rect.left <= 0:
+            return True
+        elif self.rect.right >= SCREEN_WIDTH:
+            return True
+        return False
     
     def collide(self, sprite: Paddle):
         self.x_travel = -self.x_travel
@@ -128,18 +133,40 @@ while running:
         elif event.type == pygame.USEREVENT + 1:
             opponent.update_with_key(event.key)
 
-        elif event.type == pygame.USEREVENT + 2:
-            ball.rect.topleft = event.position
+        elif event.type == pygame.USEREVENT + 3:
+            opponent.scored = event.server
+            player.scored = event.client
+
+        elif event.type == pygame.USEREVENT + 4:
+            ball.rect.topleft = (SCREEN_WIDTH/2, SCREEN_HEIGHT/2)
+            if event.starts_towards == "server" and mode == GameMode.SERVER:
+                ball.x_travel = 5
+            elif event.starts_towards == "client" and mode == GameMode.CLIENT:
+                ball.x_travel = 5
+
+            else:
+                ball.x_travel = -5
+
+            ball.y_travel = 0
             ball.flip_x()
     
     pressed = pygame.key.get_pressed()
     
-    key = player.update(pressed)
-    game.move(key)
+    if pressed.count(1) > 0 and pressed.count(1) < 2:
+        key = player.update(pressed)
+        game.move(key)
+
     ball.move()
 
-    if mode == GameMode.SERVER:
-        game.move_ball(ball.rect.topleft)
+    if ball.should_be_scored() and mode == GameMode.SERVER:
+        if ball.rect.left <= 0:
+            opponent.scored += 1
+            game.score(opponent.scored, player.scored)
+        elif ball.rect.right >= SCREEN_WIDTH:
+            player.scored += 1
+            game.score(opponent.scored, player.scored)
+        game.reset_ball("server" if ball.rect.left <= 0 else "client")
+        ball.flip_x()
 
     screen.fill((0, 0, 0))
 
@@ -148,6 +175,9 @@ while running:
 
     if sprite := pygame.sprite.spritecollideany(ball, players):
         ball.collide(sprite)
+
+    score = pygame.font.Font(None, 50).render(f"{opponent.scored} / {player.scored}", True, (255, 255, 255))
+    screen.blit(score, (SCREEN_WIDTH/2, 50))
 
     pygame.display.flip()
 
